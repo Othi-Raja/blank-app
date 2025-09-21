@@ -1,0 +1,806 @@
+ <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Python Terminal</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #1a1a1a;
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .terminal-container {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 100%);
+        }
+
+        .terminal-header {
+            background: #333;
+            color: #fff;
+            padding: 10px 15px;
+            font-size: 14px;
+            border-bottom: 1px solid #555;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .terminal-buttons {
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+        }
+
+        .btn.close { background: #ff5f56; }
+        .btn.minimize { background: #ffbd2e; }
+        .btn.maximize { background: #27ca3f; }
+
+        .system-info {
+            background: rgba(0, 255, 0, 0.1);
+            padding: 15px;
+            border-bottom: 1px solid #333;
+            font-size: 12px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        .info-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 10px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 4px;
+            border-left: 3px solid #00ff00;
+        }
+
+        .terminal-output {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            background: #0c0c0c;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+
+        .terminal-input-container {
+            display: flex;
+            align-items: center;
+            padding: 15px 20px;
+            background: #111;
+            border-top: 1px solid #333;
+        }
+
+        .prompt {
+            color: #00ff00;
+            margin-right: 10px;
+            font-weight: bold;
+        }
+
+        .terminal-input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            outline: none;
+        }
+
+        .output-line {
+            margin-bottom: 8px;
+            white-space: pre-wrap;
+        }
+
+        .command {
+            color: #00ff00;
+        }
+
+        .error {
+            color: #ff4444;
+        }
+
+        .info {
+            color: #44aaff;
+        }
+
+        .success {
+            color: #44ff44;
+        }
+
+        .file {
+            color: #ffff44;
+        }
+
+        .directory {
+            color: #44ffff;
+            font-weight: bold;
+        }
+
+        .cursor {
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
+
+        .autocomplete-suggestions {
+            position: absolute;
+            bottom: 60px;
+            left: 20px;
+            right: 20px;
+            background: #222;
+            border: 1px solid #555;
+            border-radius: 4px;
+            max-height: 150px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+        }
+
+        .suggestion {
+            padding: 8px 15px;
+            cursor: pointer;
+            border-bottom: 1px solid #333;
+        }
+
+        .suggestion:hover, .suggestion.selected {
+            background: #333;
+            color: #fff;
+        }
+    </style>
+</head>
+<body>
+    <div class="terminal-container">
+        <div class="terminal-header">
+            <div>Terminal - Python Backend</div>
+            <div class="terminal-buttons">
+                <button class="btn close"></button>
+                <button class="btn minimize"></button>
+                <button class="btn maximize"></button>
+            </div>
+        </div>
+
+        <div class="system-info" id="systemInfo">
+            <div class="info-item">
+                <span>CPU Usage:</span>
+                <span id="cpuUsage">Loading...</span>
+            </div>
+            <div class="info-item">
+                <span>Memory:</span>
+                <span id="memUsage">Loading...</span>
+            </div>
+            <div class="info-item">
+                <span>Current Directory:</span>
+                <span id="currentDir">/</span>
+            </div>
+            <div class="info-item">
+                <span>Active Processes:</span>
+                <span id="processCount">Loading...</span>
+            </div>
+        </div>
+
+        <div class="terminal-output" id="output">
+            <div class="output-line info">Python Terminal v1.0 - Welcome!</div>
+            <div class="output-line info">Type 'help' for available commands or use natural language with 'ai' prefix</div>
+            <div class="output-line">─────────────────────────────────────────────────────────────</div>
+        </div>
+
+        <div class="autocomplete-suggestions" id="suggestions"></div>
+
+        <div class="terminal-input-container">
+            <span class="prompt" id="prompt">user@python-terminal:~$ </span>
+            <input type="text" class="terminal-input" id="commandInput" autocomplete="off" spellcheck="false">
+        </div>
+    </div>
+
+    <script>
+        class PythonTerminal {
+            constructor() {
+                this.currentDir = '/home/user';
+                this.fileSystem = {
+                    '/': {
+                        type: 'directory',
+                        contents: {
+                            'home': {
+                                type: 'directory',
+                                contents: {
+                                    'user': {
+                                        type: 'directory',
+                                        contents: {
+                                            'documents': { type: 'directory', contents: {} },
+                                            'downloads': { type: 'directory', contents: {} },
+                                            'desktop': { type: 'directory', contents: {} },
+                                            'readme.txt': { type: 'file', content: 'Welcome to Python Terminal!' }
+                                        }
+                                    }
+                                }
+                            },
+                            'tmp': { type: 'directory', contents: {} },
+                            'var': { type: 'directory', contents: {} },
+                            'usr': { type: 'directory', contents: {} }
+                        }
+                    }
+                };
+                this.commandHistory = [];
+                this.historyIndex = -1;
+                this.processes = new Map();
+                this.processId = 1000;
+                
+                this.initializeElements();
+                this.setupEventListeners();
+                this.updateSystemInfo();
+                this.startSystemMonitoring();
+            }
+
+            initializeElements() {
+                this.output = document.getElementById('output');
+                this.input = document.getElementById('commandInput');
+                this.prompt = document.getElementById('prompt');
+                this.suggestions = document.getElementById('suggestions');
+                this.currentDirDisplay = document.getElementById('currentDir');
+                this.updatePrompt();
+            }
+
+            setupEventListeners() {
+                this.input.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        this.executeCommand();
+                    } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        this.navigateHistory(-1);
+                    } else if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        this.navigateHistory(1);
+                    } else if (e.key === 'Tab') {
+                        e.preventDefault();
+                        this.autoComplete();
+                    }
+                });
+
+                this.input.addEventListener('input', () => {
+                    this.showSuggestions();
+                });
+            }
+
+            updatePrompt() {
+                const shortPath = this.currentDir.replace('/home/user', '~');
+                this.prompt.textContent = `user@python-terminal:${shortPath}$ `;
+                this.currentDirDisplay.textContent = this.currentDir;
+            }
+
+            executeCommand() {
+                const command = this.input.value.trim();
+                if (!command) return;
+
+                this.commandHistory.push(command);
+                this.historyIndex = this.commandHistory.length;
+
+                this.addOutput(`user@python-terminal:${this.currentDir.replace('/home/user', '~')}$ ${command}`, 'command');
+                
+                if (command.startsWith('ai ')) {
+                    this.executeAICommand(command.substring(3));
+                } else {
+                    this.executeSystemCommand(command);
+                }
+
+                this.input.value = '';
+                this.hideSuggestions();
+            }
+
+            executeAICommand(naturalLanguage) {
+                const commands = this.interpretNaturalLanguage(naturalLanguage);
+                if (commands.length === 0) {
+                    this.addOutput('Sorry, I couldn\'t understand that command. Try being more specific.', 'error');
+                    return;
+                }
+
+                this.addOutput(`Interpreting: "${naturalLanguage}"`, 'info');
+                this.addOutput(`Executing: ${commands.join(' && ')}`, 'info');
+
+                for (const cmd of commands) {
+                    this.executeSystemCommand(cmd, true);
+                }
+            }
+
+            interpretNaturalLanguage(text) {
+                const commands = [];
+                const lower = text.toLowerCase();
+
+                // Create folder/directory patterns
+                if (lower.includes('create') && (lower.includes('folder') || lower.includes('directory'))) {
+                    const match = lower.match(/(?:folder|directory)\s+(?:called|named)?\s*['""]?([^'""\s]+)['""]?/);
+                    if (match) {
+                        commands.push(`mkdir ${match[1]}`);
+                    }
+                }
+
+                // Move file patterns
+                if (lower.includes('move') && lower.includes('into')) {
+                    const moveMatch = lower.match(/move\s+([^\s]+)\s+into\s+([^\s]+)/);
+                    if (moveMatch) {
+                        commands.push(`mv ${moveMatch[1]} ${moveMatch[2]}/`);
+                    }
+                }
+
+                // List files patterns
+                if (lower.includes('list') || lower.includes('show') && lower.includes('file')) {
+                    commands.push('ls -la');
+                }
+
+                // Delete patterns
+                if (lower.includes('delete') || lower.includes('remove')) {
+                    const deleteMatch = lower.match(/(?:delete|remove)\s+([^\s]+)/);
+                    if (deleteMatch) {
+                        commands.push(`rm ${deleteMatch[1]}`);
+                    }
+                }
+
+                // Change directory patterns
+                if (lower.includes('go to') || lower.includes('change to')) {
+                    const cdMatch = lower.match(/(?:go to|change to)\s+([^\s]+)/);
+                    if (cdMatch) {
+                        commands.push(`cd ${cdMatch[1]}`);
+                    }
+                }
+
+                return commands;
+            }
+
+            executeSystemCommand(command, fromAI = false) {
+                const parts = command.split(' ');
+                const cmd = parts[0];
+                const args = parts.slice(1);
+
+                try {
+                    switch (cmd) {
+                        case 'ls':
+                            this.listFiles(args);
+                            break;
+                        case 'cd':
+                            this.changeDirectory(args[0] || '/home/user');
+                            break;
+                        case 'pwd':
+                            this.addOutput(this.currentDir, 'info');
+                            break;
+                        case 'mkdir':
+                            this.makeDirectory(args[0]);
+                            break;
+                        case 'rm':
+                            this.removeFile(args);
+                            break;
+                        case 'rmdir':
+                            this.removeDirectory(args[0]);
+                            break;
+                        case 'touch':
+                            this.createFile(args[0]);
+                            break;
+                        case 'cat':
+                            this.showFileContent(args[0]);
+                            break;
+                        case 'echo':
+                            this.echo(args);
+                            break;
+                        case 'ps':
+                            this.listProcesses();
+                            break;
+                        case 'kill':
+                            this.killProcess(args[0]);
+                            break;
+                        case 'top':
+                            this.showSystemStats();
+                            break;
+                        case 'help':
+                            this.showHelp();
+                            break;
+                        case 'clear':
+                            this.clearScreen();
+                            break;
+                        case 'whoami':
+                            this.addOutput('user', 'info');
+                            break;
+                        case 'date':
+                            this.addOutput(new Date().toString(), 'info');
+                            break;
+                        case 'history':
+                            this.showHistory();
+                            break;
+                        default:
+                            if (!fromAI) {
+                                this.addOutput(`bash: ${cmd}: command not found`, 'error');
+                            }
+                    }
+                } catch (error) {
+                    this.addOutput(`Error: ${error.message}`, 'error');
+                }
+            }
+
+            listFiles(args) {
+                const showHidden = args.includes('-a') || args.includes('-la');
+                const longFormat = args.includes('-l') || args.includes('-la');
+                
+                const currentNode = this.getNode(this.currentDir);
+                if (!currentNode || currentNode.type !== 'directory') {
+                    this.addOutput('ls: cannot access directory', 'error');
+                    return;
+                }
+
+                const items = Object.entries(currentNode.contents);
+                if (items.length === 0) {
+                    this.addOutput('(empty directory)', 'info');
+                    return;
+                }
+
+                if (longFormat) {
+                    this.addOutput('total ' + items.length, 'info');
+                    items.forEach(([name, node]) => {
+                        const type = node.type === 'directory' ? 'd' : '-';
+                        const permissions = 'rwxr-xr-x';
+                        const size = node.type === 'file' ? (node.content?.length || 0) : 4096;
+                        const date = new Date().toLocaleDateString();
+                        const output = `${type}${permissions} 1 user user ${size.toString().padStart(8)} ${date} ${name}`;
+                        this.addOutput(output, node.type === 'directory' ? 'directory' : 'file');
+                    });
+                } else {
+                    const output = items.map(([name, node]) => name).join('  ');
+                    this.addOutput(output, 'info');
+                }
+            }
+
+            changeDirectory(path) {
+                if (!path) path = '/home/user';
+                
+                let newPath;
+                if (path.startsWith('/')) {
+                    newPath = path;
+                } else if (path === '..') {
+                    const parts = this.currentDir.split('/').filter(p => p);
+                    parts.pop();
+                    newPath = '/' + parts.join('/');
+                    if (newPath === '/') newPath = '/';
+                } else if (path === '~') {
+                    newPath = '/home/user';
+                } else {
+                    newPath = this.currentDir === '/' ? `/${path}` : `${this.currentDir}/${path}`;
+                }
+
+                const node = this.getNode(newPath);
+                if (!node) {
+                    this.addOutput(`cd: ${path}: No such file or directory`, 'error');
+                    return;
+                }
+
+                if (node.type !== 'directory') {
+                    this.addOutput(`cd: ${path}: Not a directory`, 'error');
+                    return;
+                }
+
+                this.currentDir = newPath;
+                this.updatePrompt();
+            }
+
+            makeDirectory(name) {
+                if (!name) {
+                    this.addOutput('mkdir: missing operand', 'error');
+                    return;
+                }
+
+                const currentNode = this.getNode(this.currentDir);
+                if (!currentNode || currentNode.type !== 'directory') {
+                    this.addOutput('mkdir: cannot create directory', 'error');
+                    return;
+                }
+
+                if (currentNode.contents[name]) {
+                    this.addOutput(`mkdir: cannot create directory '${name}': File exists`, 'error');
+                    return;
+                }
+
+                currentNode.contents[name] = { type: 'directory', contents: {} };
+                this.addOutput(`Directory '${name}' created successfully`, 'success');
+            }
+
+            removeFile(args) {
+                if (args.length === 0) {
+                    this.addOutput('rm: missing operand', 'error');
+                    return;
+                }
+
+                const recursive = args.includes('-r') || args.includes('-rf');
+                const filename = args[args.length - 1];
+
+                const currentNode = this.getNode(this.currentDir);
+                if (!currentNode || currentNode.type !== 'directory') {
+                    this.addOutput('rm: cannot remove files', 'error');
+                    return;
+                }
+
+                const target = currentNode.contents[filename];
+                if (!target) {
+                    this.addOutput(`rm: cannot remove '${filename}': No such file or directory`, 'error');
+                    return;
+                }
+
+                if (target.type === 'directory' && !recursive) {
+                    this.addOutput(`rm: cannot remove '${filename}': Is a directory`, 'error');
+                    return;
+                }
+
+                delete currentNode.contents[filename];
+                this.addOutput(`Removed '${filename}'`, 'success');
+            }
+
+            createFile(name) {
+                if (!name) {
+                    this.addOutput('touch: missing operand', 'error');
+                    return;
+                }
+
+                const currentNode = this.getNode(this.currentDir);
+                if (!currentNode || currentNode.type !== 'directory') {
+                    this.addOutput('touch: cannot create file', 'error');
+                    return;
+                }
+
+                currentNode.contents[name] = { type: 'file', content: '' };
+                this.addOutput(`File '${name}' created successfully`, 'success');
+            }
+
+            showFileContent(name) {
+                if (!name) {
+                    this.addOutput('cat: missing operand', 'error');
+                    return;
+                }
+
+                const currentNode = this.getNode(this.currentDir);
+                const file = currentNode?.contents[name];
+                
+                if (!file) {
+                    this.addOutput(`cat: ${name}: No such file or directory`, 'error');
+                    return;
+                }
+
+                if (file.type !== 'file') {
+                    this.addOutput(`cat: ${name}: Is a directory`, 'error');
+                    return;
+                }
+
+                this.addOutput(file.content || '(empty file)', 'info');
+            }
+
+            echo(args) {
+                const text = args.join(' ');
+                this.addOutput(text, 'info');
+            }
+
+            listProcesses() {
+                this.addOutput('  PID TTY          TIME CMD', 'info');
+                this.processes.forEach((process, pid) => {
+                    const line = `${pid.toString().padStart(5)} pts/0    00:00:00 ${process.name}`;
+                    this.addOutput(line, 'info');
+                });
+                
+                // Add some default system processes
+                const systemProcesses = [
+                    '    1 ?        00:00:01 init',
+                    '    2 ?        00:00:00 kthreadd',
+                    '    3 ?        00:00:00 rcu_gp'
+                ];
+                systemProcesses.forEach(proc => this.addOutput(proc, 'info'));
+            }
+
+            killProcess(pid) {
+                if (!pid) {
+                    this.addOutput('kill: missing operand', 'error');
+                    return;
+                }
+
+                const processId = parseInt(pid);
+                if (this.processes.has(processId)) {
+                    this.processes.delete(processId);
+                    this.addOutput(`Process ${pid} terminated`, 'success');
+                } else {
+                    this.addOutput(`kill: (${pid}) - No such process`, 'error');
+                }
+            }
+
+            showSystemStats() {
+                const stats = [
+                    'System Statistics:',
+                    '─────────────────',
+                    `CPU Usage: ${Math.floor(Math.random() * 100)}%`,
+                    `Memory: ${Math.floor(Math.random() * 8192)}MB / 8192MB`,
+                    `Disk Usage: ${Math.floor(Math.random() * 100)}%`,
+                    `Load Average: ${(Math.random() * 3).toFixed(2)}`,
+                    `Uptime: ${Math.floor(Math.random() * 24)}:${Math.floor(Math.random() * 60).toString().padStart(2, '0')}`,
+                    `Processes: ${this.processes.size + 10}`,
+                ];
+                stats.forEach(line => this.addOutput(line, 'info'));
+            }
+
+            showHelp() {
+                const help = [
+                    'Available Commands:',
+                    '─────────────────',
+                    'File Operations:',
+                    '  ls [-l] [-a]     - list directory contents',
+                    '  cd [dir]         - change directory',
+                    '  pwd              - print working directory',
+                    '  mkdir <dir>      - create directory',
+                    '  rmdir <dir>      - remove directory',
+                    '  rm [-r] <file>   - remove file/directory',
+                    '  touch <file>     - create empty file',
+                    '  cat <file>       - display file contents',
+                    '',
+                    'System Commands:',
+                    '  ps               - list processes',
+                    '  kill <pid>       - terminate process',
+                    '  top              - system statistics',
+                    '  whoami           - current user',
+                    '  date             - current date/time',
+                    '  history          - command history',
+                    '',
+                    'AI Commands (prefix with "ai"):',
+                    '  ai create folder called test',
+                    '  ai move file.txt into documents',
+                    '  ai list all files',
+                    '  ai delete old_file.txt',
+                    '',
+                    'Other:',
+                    '  echo <text>      - display text',
+                    '  clear            - clear screen',
+                    '  help             - show this help'
+                ];
+                help.forEach(line => this.addOutput(line, 'info'));
+            }
+
+            clearScreen() {
+                this.output.innerHTML = '';
+            }
+
+            showHistory() {
+                this.commandHistory.forEach((cmd, index) => {
+                    this.addOutput(`${(index + 1).toString().padStart(4)} ${cmd}`, 'info');
+                });
+            }
+
+            getNode(path) {
+                const parts = path.split('/').filter(p => p);
+                let current = this.fileSystem['/'];
+                
+                for (const part of parts) {
+                    if (!current.contents[part]) return null;
+                    current = current.contents[part];
+                }
+                
+                return current;
+            }
+
+            navigateHistory(direction) {
+                if (this.commandHistory.length === 0) return;
+
+                this.historyIndex += direction;
+                
+                if (this.historyIndex < 0) {
+                    this.historyIndex = 0;
+                } else if (this.historyIndex >= this.commandHistory.length) {
+                    this.historyIndex = this.commandHistory.length;
+                    this.input.value = '';
+                    return;
+                }
+
+                this.input.value = this.commandHistory[this.historyIndex] || '';
+            }
+
+            autoComplete() {
+                const input = this.input.value;
+                const parts = input.split(' ');
+                const lastPart = parts[parts.length - 1];
+                
+                if (parts.length === 1) {
+                    // Command completion
+                    const commands = ['ls', 'cd', 'pwd', 'mkdir', 'rm', 'touch', 'cat', 'echo', 'ps', 'kill', 'top', 'help', 'clear', 'whoami', 'date', 'history'];
+                    const matches = commands.filter(cmd => cmd.startsWith(lastPart));
+                    if (matches.length === 1) {
+                        this.input.value = matches[0] + ' ';
+                    }
+                } else {
+                    // File/directory completion
+                    const currentNode = this.getNode(this.currentDir);
+                    if (currentNode && currentNode.type === 'directory') {
+                        const items = Object.keys(currentNode.contents);
+                        const matches = items.filter(item => item.startsWith(lastPart));
+                        if (matches.length === 1) {
+                            parts[parts.length - 1] = matches[0];
+                            this.input.value = parts.join(' ');
+                        }
+                    }
+                }
+            }
+
+            showSuggestions() {
+                const input = this.input.value;
+                if (input.length < 2) {
+                    this.hideSuggestions();
+                    return;
+                }
+
+                const suggestions = [];
+                const commands = ['ls', 'cd', 'pwd', 'mkdir', 'rm', 'touch', 'cat', 'echo', 'ps', 'kill', 'top', 'help', 'clear', 'whoami', 'date', 'history'];
+                
+                if (input.indexOf(' ') === -1) {
+                    suggestions.push(...commands.filter(cmd => cmd.startsWith(input)));
+                }
+
+                if (suggestions.length > 0) {
+                    this.suggestions.innerHTML = suggestions.map(s => 
+                        `<div class="suggestion">${s}</div>`
+                    ).join('');
+                    this.suggestions.style.display = 'block';
+                } else {
+                    this.hideSuggestions();
+                }
+            }
+
+            hideSuggestions() {
+                this.suggestions.style.display = 'none';
+            }
+
+            addOutput(text, className = '') {
+                const line = document.createElement('div');
+                line.className = `output-line ${className}`;
+                line.textContent = text;
+                this.output.appendChild(line);
+                this.output.scrollTop = this.output.scrollHeight;
+            }
+
+            updateSystemInfo() {
+                document.getElementById('cpuUsage').textContent = `${Math.floor(Math.random() * 100)}%`;
+                document.getElementById('memUsage').textContent = `${Math.floor(Math.random() * 8192)}MB / 8192MB`;
+                document.getElementById('processCount').textContent = this.processes.size + Math.floor(Math.random() * 20) + 30;
+            }
+
+            startSystemMonitoring() {
+                setInterval(() => {
+                    this.updateSystemInfo();
+                }, 2000);
+
+                // Simulate random processes
+                setInterval(() => {
+                    if (Math.random() < 0.3) {
+                        const processNames = ['node', 'python', 'bash', 'vim', 'grep', 'find'];
+                        const name = processNames[Math.floor(Math.random() * processNames.length)];
+                        this.processes.set(this.processId++, { name });
+                    }
+                }, 5000);
+            }
+        }
+
+        // Initialize terminal when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new PythonTerminal();
+        });
+    </script>
+</body>
+</html>
